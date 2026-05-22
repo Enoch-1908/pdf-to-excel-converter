@@ -16,6 +16,14 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils.dataframe import dataframe_to_rows
 
+# Try to import tkinter for file dialogs
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+    TKINTER_AVAILABLE = True
+except ImportError:
+    TKINTER_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -202,6 +210,73 @@ class PDFtoExcelConverter:
         return True
 
 
+def select_file_dialog(title: str = "Select PDF File", file_type: str = "PDF files") -> Optional[str]:
+    """
+    Open file selection dialog.
+    
+    Args:
+        title: Dialog title
+        file_type: File type filter
+        
+    Returns:
+        Selected file path or None
+    """
+    if not TKINTER_AVAILABLE:
+        logger.warning("Tkinter not available. Please provide file path manually.")
+        return None
+    
+    try:
+        root = tk.Tk()
+        root.withdraw()  # Hide the window
+        
+        if "PDF" in file_type:
+            file_path = filedialog.askopenfilename(
+                title=title,
+                filetypes=[(file_type, "*.pdf"), ("All Files", "*.*")]
+            )
+        else:
+            file_path = filedialog.asksaveasfilename(
+                title=title,
+                filetypes=[(file_type, "*.xlsx"), ("All Files", "*.*")],
+                defaultextension=".xlsx"
+            )
+        
+        root.destroy()
+        return file_path if file_path else None
+        
+    except Exception as e:
+        logger.error(f"Error opening file dialog: {str(e)}")
+        return None
+
+
+def select_folder_dialog(title: str = "Select Output Folder") -> Optional[str]:
+    """
+    Open folder selection dialog.
+    
+    Args:
+        title: Dialog title
+        
+    Returns:
+        Selected folder path or None
+    """
+    if not TKINTER_AVAILABLE:
+        logger.warning("Tkinter not available. Please provide folder path manually.")
+        return None
+    
+    try:
+        root = tk.Tk()
+        root.withdraw()  # Hide the window
+        
+        folder_path = filedialog.askdirectory(title=title)
+        root.destroy()
+        
+        return folder_path if folder_path else None
+        
+    except Exception as e:
+        logger.error(f"Error opening folder dialog: {str(e)}")
+        return None
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -209,25 +284,87 @@ def main():
     )
     parser.add_argument(
         '--input', '-i',
-        required=True,
         help='Path to input PDF file'
     )
     parser.add_argument(
         '--output', '-o',
-        required=True,
         help='Path to output Excel file'
+    )
+    parser.add_argument(
+        '--interactive', '-int',
+        action='store_true',
+        help='Open file/folder selection dialogs'
     )
     
     args = parser.parse_args()
     
+    # Use interactive mode if flag is set or no arguments provided
+    if args.interactive or (not args.input and not args.output):
+        print("\n" + "="*60)
+        print("PDF to Excel Converter - Interactive Mode")
+        print("="*60 + "\n")
+        
+        if not TKINTER_AVAILABLE:
+            print("❌ Tkinter not available on this system.")
+            print("Please install tkinter or provide file paths manually:")
+            print(f"  python pdf_converter.py --input input.pdf --output output.xlsx\n")
+            sys.exit(1)
+        
+        # Select input PDF
+        print("📁 Step 1: Select PDF file to convert")
+        input_path = select_file_dialog("Select PDF File", "PDF files")
+        
+        if not input_path:
+            print("❌ No PDF file selected. Exiting.")
+            sys.exit(1)
+        
+        print(f"✓ Selected: {input_path}\n")
+        
+        # Select output folder
+        print("📁 Step 2: Select where to save Excel file")
+        output_folder = select_folder_dialog("Select Output Folder")
+        
+        if not output_folder:
+            output_folder = str(Path(input_path).parent)
+            print(f"✓ Using PDF folder: {output_folder}\n")
+        else:
+            print(f"✓ Selected: {output_folder}\n")
+        
+        # Generate output filename
+        input_name = Path(input_path).stem
+        output_path = str(Path(output_folder) / f"{input_name}_converted.xlsx")
+        
+        args.input = input_path
+        args.output = output_path
+    
+    # Validate inputs
+    if not args.input or not args.output:
+        parser.print_help()
+        sys.exit(1)
+    
+    input_file = args.input
+    output_file = args.output
+    
     # Validate input file
-    if not Path(args.input).exists():
-        logger.error(f"Input file not found: {args.input}")
+    if not Path(input_file).exists():
+        logger.error(f"Input file not found: {input_file}")
         sys.exit(1)
     
     # Create converter and execute
-    converter = PDFtoExcelConverter(args.input, args.output)
+    print("\n" + "="*60)
+    print("Converting PDF to Excel...")
+    print("="*60 + "\n")
+    
+    converter = PDFtoExcelConverter(input_file, output_file)
     success = converter.convert()
+    
+    if success:
+        print("\n" + "="*60)
+        print("✓ Conversion completed successfully!")
+        print("="*60)
+        print(f"\nOutput file: {output_file}\n")
+    else:
+        print("\n❌ Conversion failed!")
     
     sys.exit(0 if success else 1)
 
